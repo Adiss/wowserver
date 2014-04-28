@@ -34,14 +34,6 @@ namespace lfg
 
 LFGPlayerScript::LFGPlayerScript() : PlayerScript("LFGPlayerScript") { }
 
-void LFGPlayerScript::OnLevelChanged(Player* player, uint8 /*oldLevel*/)
-{
-    if (!sLFGMgr->isOptionEnabled(LFG_OPTION_ENABLE_DUNGEON_FINDER | LFG_OPTION_ENABLE_RAID_BROWSER))
-        return;
-
-    sLFGMgr->InitializeLockedDungeons(player);
-}
-
 void LFGPlayerScript::OnLogout(Player* player)
 {
     if (!sLFGMgr->isOptionEnabled(LFG_OPTION_ENABLE_DUNGEON_FINDER | LFG_OPTION_ENABLE_RAID_BROWSER))
@@ -74,16 +66,8 @@ void LFGPlayerScript::OnLogin(Player* player)
         }
     }
 
-    sLFGMgr->InitializeLockedDungeons(player);
     sLFGMgr->SetTeam(player->GetGUID(), player->GetTeam());
     /// @todo - Restore LfgPlayerData and send proper status to player if it was in a group
-}
-
-void LFGPlayerScript::OnBindToInstance(Player* player, Difficulty difficulty, uint32 mapId, bool /*permanent*/)
-{
-    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-    if (mapEntry->IsDungeon() && difficulty > DUNGEON_DIFFICULTY_NORMAL)
-        sLFGMgr->InitializeLockedDungeons(player);
 }
 
 void LFGPlayerScript::OnMapChanged(Player* player)
@@ -193,7 +177,7 @@ void LFGGroupScript::OnRemoveMember(Group* group, uint64 guid, RemoveMethod meth
         //else if (state == LFG_STATE_BOOT)
             // Update internal kick cooldown of kicked
 
-        player->GetSession()->SendLfgUpdateParty(LfgUpdateData(LFG_UPDATETYPE_LEADER_UNK1));
+        player->GetSession()->SendLfgUpdateStatus(LfgUpdateData(LFG_UPDATETYPE_LEADER_UNK1), true);
         if (isLFG && player->GetMap()->IsDungeon())            // Teleport player out the dungeon
             sLFGMgr->TeleportPlayer(player, true);
     }

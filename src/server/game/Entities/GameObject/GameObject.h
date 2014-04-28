@@ -46,6 +46,7 @@ struct GameObjectTemplate
     uint32  flags;
     float   size;
     uint32  questItems[MAX_GAMEOBJECT_QUEST_ITEMS];
+    int32   unkInt32;
     union                                                   // different GO types have different data field
     {
         //0 GAMEOBJECT_TYPE_DOOR
@@ -806,7 +807,7 @@ class GameObject : public WorldObject, public GridObject<GameObject>, public Map
             return GO_DESTRUCTIBLE_INTACT;
         }
 
-        void EventInform(uint32 eventId);
+        void EventInform(uint32 eventId, WorldObject* invoker = NULL);
 
         uint64 GetRotation() const { return m_rotation; }
         virtual uint32 GetScriptId() const { return GetGOInfo()->ScriptId; }
@@ -830,7 +831,7 @@ class GameObject : public WorldObject, public GridObject<GameObject>, public Map
         float GetStationaryZ() const { if (GetGOInfo()->type != GAMEOBJECT_TYPE_MO_TRANSPORT) return m_stationaryPosition.GetPositionZ(); return GetPositionZ(); }
         float GetStationaryO() const { if (GetGOInfo()->type != GAMEOBJECT_TYPE_MO_TRANSPORT) return m_stationaryPosition.GetOrientation(); return GetOrientation(); }
 
-        float GetInteractionDistance();
+        float GetInteractionDistance() const;
 
         void UpdateModelPosition();
 

@@ -118,10 +118,14 @@ void WorldSession::HandleCreatureQueryOpcode(WorldPacket& recvData)
         WorldPacket data(SMSG_CREATURE_QUERY_RESPONSE, 100);
         data << uint32(entry);                              // creature entry
         data << Name;
-        data << uint8(0) << uint8(0) << uint8(0);           // name2, name3, name4, always empty
+
+        for (int i = 0; i < 7; i++)
+            data << uint8(0); // name2, ..., name8
+
         data << SubName;
         data << ci->IconName;                               // "Directions" for guard, string for Icons 2.3.0
         data << uint32(ci->type_flags);                     // flags
+        data << uint32(ci->type_flags2);                    // unknown meaning
         data << uint32(ci->type);                           // CreatureType.dbc
         data << uint32(ci->family);                         // CreatureFamily.dbc
         data << uint32(ci->rank);                           // Creature Rank (elite, boss, etc)
@@ -137,6 +141,7 @@ void WorldSession::HandleCreatureQueryOpcode(WorldPacket& recvData)
         for (uint32 i = 0; i < MAX_CREATURE_QUEST_ITEMS; ++i)
             data << uint32(ci->questItems[i]);              // itemId[6], quest drop
         data << uint32(ci->movementId);                     // CreatureMovementInfo.dbc
+        data << uint32(ci->expansionUnknown);               // unknown meaning
         SendPacket(&data);
         TC_LOG_DEBUG("network", "WORLD: Sent SMSG_CREATURE_QUERY_RESPONSE");
     }
@@ -192,7 +197,8 @@ void WorldSession::HandleGameObjectQueryOpcode(WorldPacket& recvData)
         data.append(info->raw.data, MAX_GAMEOBJECT_DATA);
         data << float(info->size);                          // go size
         for (uint32 i = 0; i < MAX_GAMEOBJECT_QUEST_ITEMS; ++i)
-            data << uint32(info->questItems[i]);              // itemId[6], quest drop
+            data << uint32(info->questItems[i]);            // itemId[6], quest drop
+        data << int32(info->unkInt32);                      // 4.x, unknown
         SendPacket(&data);
         TC_LOG_DEBUG("network", "WORLD: Sent SMSG_GAMEOBJECT_QUERY_RESPONSE");
     }
@@ -207,7 +213,7 @@ void WorldSession::HandleGameObjectQueryOpcode(WorldPacket& recvData)
     }
 }
 
-void WorldSession::HandleCorpseQueryOpcode(WorldPacket & /*recvData*/)
+void WorldSession::HandleCorpseQueryOpcode(WorldPacket& /*recvData*/)
 {
     TC_LOG_DEBUG("network", "WORLD: Received MSG_CORPSE_QUERY");
 
@@ -264,18 +270,18 @@ void WorldSession::HandleNpcTextQueryOpcode(WorldPacket& recvData)
     uint64 guid;
 
     recvData >> textID;
-    TC_LOG_DEBUG("network", "WORLD: CMSG_NPC_TEXT_QUERY ID '%u'", textID);
+    TC_LOG_DEBUG("network", "WORLD: CMSG_NPC_TEXT_QUERY TextId: %u", textID);
 
     recvData >> guid;
 
-    GossipText const* pGossip = sObjectMgr->GetGossipText(textID);
+    GossipText const* gossip = sObjectMgr->GetGossipText(textID);
 
     WorldPacket data(SMSG_NPC_TEXT_UPDATE, 100);          // guess size
     data << textID;
 
-    if (!pGossip)
+    if (!gossip)
     {
-        for (uint32 i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
+        for (uint8 i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
         {
             data << float(0);
             data << "Greetings $N";
@@ -291,46 +297,50 @@ void WorldSession::HandleNpcTextQueryOpcode(WorldPacket& recvData)
     }
     else
     {
-        std::string Text_0[MAX_LOCALES], Text_1[MAX_LOCALES];
-        for (int i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
-        {
-            Text_0[i]=pGossip->Options[i].Text_0;
-            Text_1[i]=pGossip->Options[i].Text_1;
-        }
+        std::string text0[MAX_GOSSIP_TEXT_OPTIONS], text1[MAX_GOSSIP_TEXT_OPTIONS];
+        LocaleConstant locale = GetSessionDbLocaleIndex();
 
-        int loc_idx = GetSessionDbLocaleIndex();
-        if (loc_idx >= 0)
+        for (uint8 i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
         {
-            if (NpcTextLocale const* nl = sObjectMgr->GetNpcTextLocale(textID))
+            BroadcastText const* bct = sObjectMgr->GetBroadcastText(gossip->Options[i].BroadcastTextID);
+            if (bct)
             {
-                for (int i = 0; i < MAX_LOCALES; ++i)
+                ObjectMgr::GetLocaleString(bct->MaleText, locale, text0[i]);
+                ObjectMgr::GetLocaleString(bct->FemaleText, locale, text1[i]);
+            }
+            else
+            {
+                text0[i] = gossip->Options[i].Text_0;
+                text1[i] = gossip->Options[i].Text_1;
+            }
+
+            if (locale != DEFAULT_LOCALE && !bct)
+            {
+                if (NpcTextLocale const* npcTextLocale = sObjectMgr->GetNpcTextLocale(textID))
                 {
-                    ObjectMgr::GetLocaleString(nl->Text_0[i], loc_idx, Text_0[i]);
-                    ObjectMgr::GetLocaleString(nl->Text_1[i], loc_idx, Text_1[i]);
+                    ObjectMgr::GetLocaleString(npcTextLocale->Text_0[i], locale, text0[i]);
+                    ObjectMgr::GetLocaleString(npcTextLocale->Text_1[i], locale, text1[i]);
                 }
             }
-        }
 
-        for (int i = 0; i < MAX_GOSSIP_TEXT_OPTIONS; ++i)
-        {
-            data << pGossip->Options[i].Probability;
+            data << gossip->Options[i].Probability;
 
-            if (Text_0[i].empty())
-                data << Text_1[i];
+            if (text0[i].empty())
+                data << text1[i];
             else
-                data << Text_0[i];
+                data << text0[i];
 
-            if (Text_1[i].empty())
-                data << Text_0[i];
+            if (text1[i].empty())
+                data << text0[i];
             else
-                data << Text_1[i];
+                data << text1[i];
 
-            data << pGossip->Options[i].Language;
+            data << gossip->Options[i].Language;
 
-            for (int j = 0; j < MAX_GOSSIP_TEXT_EMOTES; ++j)
+            for (uint8 j = 0; j < MAX_GOSSIP_TEXT_EMOTES; ++j)
             {
-                data << pGossip->Options[i].Emotes[j]._Delay;
-                data << pGossip->Options[i].Emotes[j]._Emote;
+                data << gossip->Options[i].Emotes[j]._Delay;
+                data << gossip->Options[i].Emotes[j]._Emote;
             }
         }
     }
@@ -385,8 +395,8 @@ void WorldSession::HandleCorpseMapPositionQuery(WorldPacket& recvData)
 {
     TC_LOG_DEBUG("network", "WORLD: Recv CMSG_CORPSE_MAP_POSITION_QUERY");
 
-    uint32 unk;
-    recvData >> unk;
+    uint32 transportGuidLow;
+    recvData >> transportGuidLow;
 
     WorldPacket data(SMSG_CORPSE_MAP_POSITION_QUERY_RESPONSE, 4+4+4+4);
     data << float(0);
